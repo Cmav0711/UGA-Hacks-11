@@ -1,4 +1,4 @@
-#uga-hacks11
+# test-uga-hacks11
 
 ## Bright Light Color Detection Application
 
@@ -59,7 +59,7 @@ After selecting both colors, the application will track lights and detect color 
 - Press '[' to decrease no-light timeout, ']' to increase (default: 3.0s)
 - Press 'q' to quit
 - Press 'c' to clear the tracked points
-- When light is not detected for the configured timeout, a PNG image and CSV file are automatically saved, and all points are cleared
+- When light is not detected for the configured timeout, a PNG image is automatically saved
 
 #### Static Image Mode
 ```bash
@@ -85,8 +85,7 @@ See [ColorDetectionApp/README.md](ColorDetectionApp/README.md) for detailed usag
 - Color difference from baseline (when calibrated)
 - Frame counter showing number of points tracked, current tracking radius, and no-light timeout
 - Calibration status indicator
-- Automatic PNG and CSV export when light is not detected for the configured timeout
-- After export, all tracked points are automatically cleared
+- Automatic PNG export when light is not detected for the configured timeout
 
 #### Static Image Mode
 The application detects bright lights and provides:
@@ -94,5 +93,4 @@ The application detects bright lights and provides:
 - Area in pixels
 - Bounding box dimensions
 - Visual overlays with detection markers and connecting lines
-
 - Point map for spatial analysis with path visualization
