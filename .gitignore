@@ -1,0 +1,27 @@
+# Build results
+bin/
+obj/
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+**/packages/*
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+
+# Output files (optional - comment out if you want to include sample outputs)
+# *.png
+# *.jpg
+# *.jpeg
