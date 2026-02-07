@@ -1,4 +1,4 @@
-# test-uga-hacks11
+#uga-hacks11
 
 ## Bright Light Color Detection Application
 
@@ -94,4 +94,5 @@ The application detects bright lights and provides:
 - Area in pixels
 - Bounding box dimensions
 - Visual overlays with detection markers and connecting lines
+
 - Point map for spatial analysis with path visualization
