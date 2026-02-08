@@ -1529,8 +1529,12 @@ namespace ColorDetectionApp
     public static class NetworkManager
     {
         private static readonly UdpClient udpClient = new UdpClient();
-        // TODO: CHANGE THIS TO 100.66.230.53 FOR TAILSCALE
-        private static readonly IPEndPoint endPoint = new IPEndPoint(IPAddress.Loopback, 5555);
+        private const string DefaultTailScaleHost = "100.66.230.53";
+        private const int DefaultTailScalePort = 5555;
+        private static readonly IPEndPoint endPoint = CreateTailScaleEndpoint();
+
+        public static bool PacketLoggingEnabled { get; set; } = true;
+        private static long packetsSent = 0;
     
         public static short CurrentSpellShapeID { get; private set; } = 0;
         public static int PacketOffset = 0;
@@ -1548,6 +1552,27 @@ namespace ColorDetectionApp
             }
             PacketOffset = 0;
             Console.WriteLine($">>> NEW SPELL SHAPE ID GENERATED: {CurrentSpellShapeID}");
+        }
+
+        private static IPEndPoint CreateTailScaleEndpoint()
+        {
+            string? host = Environment.GetEnvironmentVariable("TAILSCALE_HOST");
+            string? portText = Environment.GetEnvironmentVariable("TAILSCALE_PORT");
+
+            if (string.IsNullOrWhiteSpace(host))
+            {
+                host = DefaultTailScaleHost;
+            }
+
+            int port = DefaultTailScalePort;
+            if (!string.IsNullOrWhiteSpace(portText) && int.TryParse(portText, out int parsedPort))
+            {
+                port = parsedPort;
+            }
+
+            IPEndPoint endpoint = new IPEndPoint(IPAddress.Parse(host), port);
+            Console.WriteLine($"[NET] Tailscale UDP target: {endpoint.Address}:{endpoint.Port}");
+            return endpoint;
         }
     
         public static void SendStreamPacket(float x, float y, bool isDrawing)
@@ -1618,7 +1643,22 @@ namespace ColorDetectionApp
     
         private static void Send(byte[] data)
         {
-            try { udpClient.Send(data, data.Length, endPoint); }
+            try
+            {
+                udpClient.Send(data, data.Length, endPoint);
+                if (PacketLoggingEnabled)
+                {
+                    packetsSent++;
+                    byte type = data.Length > 0 ? data[0] : (byte)255;
+                    string typeLabel = type switch
+                    {
+                        0 => "STREAM",
+                        1 => "ACTION",
+                        _ => "UNKNOWN"
+                    };
+                    Console.WriteLine($"[NET] Sent {typeLabel} packet #{packetsSent} ({data.Length} bytes) at {DateTime.Now:HH:mm:ss.fff}");
+                }
+            }
             catch {  }
         }
     }
