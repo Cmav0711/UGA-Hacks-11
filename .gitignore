@@ -36,3 +36,30 @@ ColorDetectionApp/detected_symbols.csv
 ColorDetectionApp/circular_screenshot_*.png
 ColorDetectionApp/light_drawing_*.png
 ColorDetectionApp/light_drawing_*.csv
+
+# --- Unity Folders ---
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[探]Logs/
+/[Mm]emoryCaptures/
+
+# --- VS Code / VSCodium Specifics ---
+.vscode/
+.history/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sln.docuser
+
+# --- OS & Hardware Trash ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
