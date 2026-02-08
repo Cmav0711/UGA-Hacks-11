@@ -9,6 +9,13 @@ using System.Collections.Generic;
 using System.Linq;
 using OpenCvSharp;
 
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+
+
 namespace ColorDetectionApp
 {
     // Enum for predefined color options
@@ -316,6 +323,11 @@ namespace ColorDetectionApp
                         
                         if (brightestPoint.HasValue)
                         {
+                            if (brightestPoints.Count == 0)
+                            {
+                                NetworkManager.GenerateNewStrokeID();
+                            }
+
                             // Add to our collection (already filtered by circle search)
                             brightestPoints.Add(brightestPoint.Value);
                             
@@ -344,6 +356,10 @@ namespace ColorDetectionApp
                                 Cv2.PutText(frame, diffInfo, new OpenCvSharp.Point(10, 85), 
                                            HersheyFonts.HersheySimplex, 0.5, new Scalar(255, 255, 255), 1);
                             }
+
+                            float normX = (float)(brightestPoint.Value.X / capture.FrameWidth);
+                            float normY = (float)(brightestPoint.Value.Y / capture.FrameHeight);
+                            NetworkManager.SendStreamPacket(normX, normY, lineDrawingEnabled);
                         }
                         
                         // Check if light has not been detected for the configured timeout
@@ -366,6 +382,11 @@ namespace ColorDetectionApp
                             
                             // Perform symbol detection on the exported image using enhanced detector
                             DetectAndRecordSymbolsEnhanced(pngFilename);
+
+                            float avgX = (float)(pointsToExport.Average(p => p.X) / capture.FrameWidth);
+                            bool isRightLane = avgX > 0.5f;
+
+                            NetworkManager.SendActionPacket(currentDetectedShape, isRightLane);
                             
                             imageExported = true;
                             
@@ -1503,6 +1524,73 @@ namespace ColorDetectionApp
                 CenterX = sumX / PixelCount;
                 CenterY = sumY / PixelCount;
             }
+        }
+    }
+
+    public static class NetworkManager
+    {
+        private static readonly UdpClient udpClient = new UdpClient();
+        // TODO: CHANGE THIS TO 100.66.230.53
+        private static readonly IPEndPoint endPoint = new IPEndPoint(IPAddress.Loopback, 5555);
+
+        public static short CurrentStrokeID { get; private set; } = 0;
+        public static int PacketOffset = 0;
+
+        public static void GenerateNewStrokeID()
+        {
+            long timestamp = DateTime.UtcNow.Ticks;
+            byte[] timeBytes = BitConverter.GetBytes(timestamp);
+
+            using (SHA256 sha256 = SHA256.Create())
+                {
+                byte[] hash = sha256.ComputeHash(timeBytes);
+                CurrentStrokeID = BitConverter.ToInt16(hash, 0);
+                }
+            PacketOffset = 0;
+            Console.WriteLine($">>> NEW STROKE ID GENERATED: {CurrentStrokeID}");
+        }
+
+        public static void SendStreamPacket(float x, float y, bool isDrawing)
+        {
+            List<byte> packet = new List<byte>();
+            packet.Add(0);
+            packet.AddRange(BitConverter.GetBytes(CurrentStrokeID));
+            packet.AddRange(BitConverter.GetBytes(PacketOffset));
+            packet.AddRange(BitConverter.GetBytes(x));
+            packet.AddRange(BitConverter.GetBytes(y));
+            packet.Add(isDrawing ? (byte)1 : (byte)0);
+
+            Send(packet.ToArray());
+            PacketOffset++;
+        }
+
+        public static void SendActionPacket(string shapeName, bool isRightSide)
+        {
+            byte classId = shapeName.ToLower() switch {
+                string s when s.Contains("circle") => 1,
+                string s when s.Contains("triangle") => 2,
+                string s when s.Contains("square") => 3,
+                string s when s.Contains("star") => 4,
+                _ => 0
+            };
+
+            List<byte> packet = new List<byte>();
+            packet.Add(1);
+            packet.AddRange(BitConverter.GetBytes(CurrentStrokeID));
+            packet.Add(classId);
+            packet.Add(isRightSide ? (byte)1 : (byte)0);
+
+            byte[] data = packet.ToArray();
+
+            for (int i = 0; i < 20; i++) {
+                Send(data);
+            }
+        }
+
+        private static void Send(byte[] data)
+        {
+            try { udpClient.Send(data, data.Length, endPoint); }
+            catch { /* Shhhhhhhh */ }
         }
     }
 }
