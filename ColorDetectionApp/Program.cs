@@ -384,7 +384,11 @@ namespace ColorDetectionApp
                             DetectAndRecordSymbolsEnhanced(pngFilename);
 
 
+<<<<<<< HEAD
                             NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth, currentMode);
+=======
+                            NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth);
+>>>>>>> 8ee3630dedd17d531ef84a2efcd98f17a082e1d1
                             //NetworkManager.SendActionPacket(currentDetectedShape, isRightLane);
                             
                             imageExported = true;
@@ -1581,10 +1585,17 @@ namespace ColorDetectionApp
                 double angle = Math.Atan2(end.Y - start.Y, end.X - start.X) * 180 / Math.PI;
     
                 laneId = angle switch {
+<<<<<<< HEAD
                     < -115 and > -165 => (byte)0, // Flick Left-Up
                     <= -65 and >= -115 => (byte)1, // Flick Straight-Up
                     < -15 and >= -65   => (byte)2, // Flick Right-Up
                     _ => (byte)3                  // Default / No Lane (The catch-all)
+=======
+                    < -115 and > -165 => 1, // Flick Left-Up
+                    <= -65 and >= -115 => 2, // Flick Straight-Up
+                    < -15 and >= -65   => 3, // Flick Right-Up
+                    _ => 0 // No lane match
+>>>>>>> 8ee3630dedd17d531ef84a2efcd98f17a082e1d1
                 };
             } 
             else 
