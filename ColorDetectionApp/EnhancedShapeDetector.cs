@@ -156,10 +156,11 @@ namespace ColorDetectionApp
                 return ("circle", confidence);
             }
 
-            // Ellipse/oval detection
+
+            // Treat oval-like shapes as circles per simplified rules
             if (circularity > 0.60 && (aspectRatio < 0.75 || aspectRatio > 1.33))
             {
-                return ("oval", circularity * 0.85);
+                return ("circle", circularity * 0.85);
             }
 
             // Star detection (concave shape with multiple vertices)
@@ -170,10 +171,10 @@ namespace ColorDetectionApp
                 return ("star", confidence);
             }
 
-            // Cross/plus detection
+            // Treat cross/plus-like shapes as circles per simplified rules
             if (vertices >= 12 && convexity < 0.90)
             {
-                return ("cross", 0.80);
+                return ("star", 0.80);
             }
 
             // Polygon classification based on vertices
@@ -183,45 +184,25 @@ namespace ColorDetectionApp
                     return ("triangle", 0.90);
 
                 case 4:
-                    // Distinguish between square, rectangle, and diamond
-                    var isSquareLike = aspectRatio >= 0.90 && aspectRatio <= 1.10;
-                    
-                    if (isSquareLike)
-                    {
-                        return ("square", 0.92);
-                    }
-                    else
-                    {
-                        // Check if it's rotated (diamond)
-                        var isDiamond = aspectRatio >= 0.85 && aspectRatio <= 1.15;
-                        if (isDiamond)
-                        {
-                            return ("diamond", 0.85);
-                        }
-                        return ("rectangle", 0.88);
-                    }
+                    return ("rectangle", 0.88);
 
                 case 5:
-                    return ("pentagon", 0.85);
-
                 case 6:
-                    return ("hexagon", 0.85);
-
                 case 7:
-                    return ("heptagon", 0.80);
-
                 case 8:
-                    return ("octagon", 0.85);
+                    // Any polygon above a square (and not a star/cross) is treated as a circle
+                    return ("circle", 0.80);
 
                 default:
                     // Many vertices could be a circle approximation or complex polygon
-                    if (vertices > 10)
+                    if (vertices > 4)
                     {
-                        if (circularity > 0.50)
-                        {
-                            return ("circle", circularity * 0.80);
-                        }
-                        return ("polygon", 0.70);
+                        // Any polygon above a square (and not a star/cross) is treated as a circle
+                        return ("circle", 0.80);
+                    }
+                    if (vertices <= 2)
+                    {
+                        return ("line", 0.65);
                     }
                     return ($"polygon_{vertices}", 0.65);
             }
