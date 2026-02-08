@@ -64,6 +64,7 @@ public class UDPCommandListener : MonoBehaviour
             {
                 _latestPacket.id = BitConverter.ToUInt16(data, 1);
                 _latestPacket.pos = new Vector2(BitConverter.ToSingle(data, 7), BitConverter.ToSingle(data, 11));
+                Debug.Log(_latestPacket.pos);
                 _latestPacket.isDrawing = data[15] != 0;
             }
             else if (type == 2 && data.Length >= 5) // Termination
@@ -72,6 +73,7 @@ public class UDPCommandListener : MonoBehaviour
                 _latestPacket.shapeClass = data[3];
                 _latestPacket.direction = data[4];
                 _latestPacket.isDrawing = false; // Force stop
+                Debug.Log("Drawing stopped");
             }
             _hasNewData = true;
         }
