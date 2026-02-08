@@ -19,7 +19,7 @@ using System.Threading;
 namespace ColorDetectionApp
 {
     // Enum for predefined color options
-    enum LightColor
+    public enum LightColor
     {
         Any,      // Any bright light (original behavior)
         Red,
@@ -32,7 +32,7 @@ namespace ColorDetectionApp
     }
 
     // Enum for tracking modes
-    enum TrackingMode
+    public enum TrackingMode
     {
         Drawing,  // Drawing mode - draws lines and shapes
         Cursor    // Cursor mode - only tracks coordinates
@@ -359,7 +359,7 @@ namespace ColorDetectionApp
 
                             float normX = (float)(brightestPoint.Value.X / capture.FrameWidth);
                             float normY = (float)(brightestPoint.Value.Y / capture.FrameHeight);
-                            NetworkManager.SendStreamPacket(normX, normY, CurrentMode == TrackingMode.Drawing);
+                            NetworkManager.SendStreamPacket(normX, normY, currentMode == TrackingMode.Drawing);
                         }
                         
                         // Check if light has not been detected for the configured timeout
@@ -384,7 +384,7 @@ namespace ColorDetectionApp
                             DetectAndRecordSymbolsEnhanced(pngFilename);
 
 
-                            NetworkManager.SendActionPacket();
+                            NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth, currentMode);
                             //NetworkManager.SendActionPacket(currentDetectedShape, isRightLane);
                             
                             imageExported = true;
@@ -1565,7 +1565,7 @@ namespace ColorDetectionApp
         }
     
         // UPDATED: Added frameWidth so we can do math inside here
-        public static void SendActionPacket(string shapeName, List<OpenCvSharp.Point> points, double frameWidth)
+        public static void SendActionPacket(string shapeName, List<OpenCvSharp.Point> points, double frameWidth, TrackingMode CurrentMode)
         {
             byte classId = 0;
             byte laneId = 3; // Default to No Lane
@@ -1581,9 +1581,10 @@ namespace ColorDetectionApp
                 double angle = Math.Atan2(end.Y - start.Y, end.X - start.X) * 180 / Math.PI;
     
                 laneId = angle switch {
-                    < -115 and > -165 => 0, // Flick Left-Up
-                    <= -65 and >= -115 => 1, // Flick Straight-Up
-                    < -15 and >= -65   => 2 // Flick Right-Up
+                    < -115 and > -165 => (byte)0, // Flick Left-Up
+                    <= -65 and >= -115 => (byte)1, // Flick Straight-Up
+                    < -15 and >= -65   => (byte)2, // Flick Right-Up
+                    _ => (byte)3                  // Default / No Lane (The catch-all)
                 };
             } 
             else 
