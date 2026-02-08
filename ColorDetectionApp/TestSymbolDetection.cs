@@ -32,7 +32,7 @@ namespace ColorDetectionApp
 
             // Run symbol detection on the test image
             Console.WriteLine("\nRunning symbol detection...");
-            Program.DetectAndRecordSymbols(testImagePath);
+            Program.DetectAndRecordSymbolsEnhanced(testImagePath);
             
             Console.WriteLine("\nTest complete! Check detected_symbols.csv for results.");
         }
