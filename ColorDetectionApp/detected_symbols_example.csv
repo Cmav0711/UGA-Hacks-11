@@ -1,0 +1,4 @@
+Timestamp,ImageFilename,DetectedSymbols,Confidence,Count
+2024-02-07 18:15:23,circular_screenshot_20240207_181523.png,circle;star,0.892;0.754,2
+2024-02-07 18:16:45,light_drawing_20240207_181645.png,square,0.812,1
+2024-02-07 18:18:12,circular_screenshot_20240207_181812.png,None,N/A,0

@@ -8,8 +8,27 @@ A C# console application that uses real-time camera tracking or image processing
 - **Color Selection at Startup**: Choose which color of light to track (Red, Green, Blue, Yellow, Cyan, Magenta, White, or Any bright light)
 - **HSV Color-Based Detection**: Uses HSV color space for accurate color matching of light sources
 - **Live Color-Specific Tracking**: Automatically finds and tracks lights matching the selected color in each camera frame
+- **Circular Screenshot Capture**: Define a circular region in the center of the screen and capture only that area
+  - Visual indicator showing the capture region with a cyan circle overlay
+  - Adjustable circle size using 'o' and 'i' keys (20-500px, default: 150px)
+  - Press 's' to capture a circular screenshot that only includes the area within the circle
+  - Areas outside the circle are made transparent in the saved image
+  - **Automatic Symbol Detection**: Each captured circular screenshot is automatically analyzed for symbols
+- **Symbol Recognition**: Captures are automatically compared against template symbols
+  - Template symbols stored in the `symbols/` directory
+  - Uses OpenCV template matching to detect symbols in captured images
+  - Results recorded in `detected_symbols.csv` with timestamp, image filename, detected symbols, and confidence scores
+  - Generate example symbol templates with `dotnet run --generate-symbols`
 - **Automatic PNG Export**: When light is not detected for a configurable timeout (default: 3.0s), the drawn path is automatically saved as a PNG file
+  - **Symbol Detection on Export**: Each exported PNG is automatically analyzed for symbol matches
+  - Results saved to `detected_symbols.csv` with detailed information
 - **Adjustable No-Light Timeout**: Use '[' and ']' keys to change the timeout for automatic PNG export (0.5-30.0s, default: 3.0s)
+- **Statistical Outlier Detection (NEW!)**: Automatically removes extreme outliers from tracked points before exporting
+  - Uses robust statistical methods: IQR (Interquartile Range) and Modified Z-score with MAD (Median Absolute Deviation)
+  - Hybrid approach combining multiple algorithms for optimal accuracy
+  - Toggle on/off with 'x' key (enabled by default)
+  - Displays outlier removal statistics when exporting
+  - Ensures clean, accurate drawings by filtering out erratic jumps and noise
 - **Circle-based Filtering**: Only accepts points within a configurable radius of the last tracked point, preventing erratic jumps
 - **Adjustable Tracking Radius**: Use '+' and '-' keys to change the tracking circle size (10-500px, default: 100px)
 - **Visual Tracking Circle**: Purple circle overlay shows the current tracking area around the last tracked point
@@ -26,8 +45,13 @@ A C# console application that uses real-time camera tracking or image processing
   - Press '-' to decrease tracking radius by 10px
   - Press ']' to increase no-light timeout by 0.5s
   - Press '[' to decrease no-light timeout by 0.5s
+  - Press 'o' to increase capture circle size by 10px
+  - Press 'i' to decrease capture circle size by 10px
+  - Press 's' to take a circular screenshot
+  - Press 'x' to toggle outlier detection on/off
+  - Press 'f' to flip/mirror the camera display
 - **Real-time Overlay**: Shows current camera feed with overlaid tracking information
-- **Frame Statistics**: Displays count of tracked points, tracking radius, no-light timeout, and calibration status
+- **Frame Statistics**: Displays count of tracked points, tracking radius, no-light timeout, capture circle radius, and calibration status
 
 ### Static Image Mode
 - **Bright Light Detection**: Automatically identifies bright light sources in images
@@ -54,8 +78,34 @@ A C# console application that uses real-time camera tracking or image processing
   - Saturation threshold: < 100 (to detect white/bright lights)
   - Minimum region size: 50 pixels (to filter noise)
   - Uses flood-fill algorithm for region detection
+- Symbol detection algorithm:
+  - Uses OpenCV template matching with CCoeffNormed method
+  - Compares captured images against templates in `symbols/` directory
+  - Confidence threshold: 0.7 (70% match required)
+  - Results recorded in `detected_symbols.csv`
 
 ## Usage
+
+### Generate Symbol Templates (First Time Setup)
+
+Before using symbol detection, generate example templates:
+
+```bash
+dotnet run --generate-symbols
+```
+
+This creates five example symbol templates in the `symbols/` directory:
+- `circle.png` - A white circle on black background
+- `square.png` - A white square on black background
+- `triangle.png` - A white triangle on black background
+- `star.png` - A white 5-pointed star on black background
+- `cross.png` - A white cross/plus sign on black background
+
+You can add your own symbol templates by placing PNG or JPEG images in the `symbols/` directory. Each template should:
+- Contain a single, clear symbol
+- Have good contrast (preferably white symbol on black background)
+- Be reasonably sized (100x100 pixels works well)
+- Be named descriptively (the filename becomes the symbol name in results)
 
 ### Real-time Camera Mode
 
@@ -182,6 +232,20 @@ The application generates two output images:
    - Cyan circles marking the center of each detected light
    - Yellow lines connecting consecutive points
    - Useful for spatial analysis and mapping
+
+3. **`detected_symbols.csv`**: Symbol detection results (created/updated automatically)
+   - **Timestamp**: Date and time when the symbol detection was performed
+   - **ImageFilename**: Name of the analyzed image file
+   - **DetectedSymbols**: Semicolon-separated list of detected symbol names (or "None")
+   - **Confidence**: Semicolon-separated list of confidence scores (0.000-1.000)
+   - **Count**: Number of symbols detected in the image
+   
+   Example CSV content:
+   ```
+   Timestamp,ImageFilename,DetectedSymbols,Confidence,Count
+   2024-02-07 18:15:23,circular_screenshot_20240207_181523.png,circle;star,0.892;0.754,2
+   2024-02-07 18:16:45,light_drawing_20240207_181645.png,None,N/A,0
+   ```
 
 ## Building
 

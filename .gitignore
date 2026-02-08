@@ -25,3 +25,14 @@ artifacts/
 # *.png
 # *.jpg
 # *.jpeg
+
+# Demo images
+demo_images/
+create_demo_images.py
+
+# Runtime generated files (keep example files)
+ColorDetectionApp/test_symbol_image.png
+ColorDetectionApp/detected_symbols.csv
+ColorDetectionApp/circular_screenshot_*.png
+ColorDetectionApp/light_drawing_*.png
+ColorDetectionApp/light_drawing_*.csv

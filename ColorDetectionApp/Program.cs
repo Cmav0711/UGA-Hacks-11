@@ -26,10 +26,121 @@ namespace ColorDetectionApp
 
     class Program
     {
+        // Real-time detection constants
+        private const double MIN_REALTIME_CONFIDENCE = 0.40;  // Lower threshold for real-time feedback
+        private const double MIN_SAVED_CONFIDENCE = 0.60;     // Higher threshold for saved results
+        private const int MIN_POINTS_FOR_DETECTION = 10;       // Minimum tracked points before detection starts
+        private const double ASSUMED_CAMERA_FPS = 30.0;        // Assumed framerate for detection interval calculations
+        // Key codes for F11 - can vary by platform
+        private const int F11_KEY_CODE_PRIMARY = 65478;
+        private const int F11_KEY_CODE_ALTERNATE = 65470;
+        
         static void Main(string[] args)
         {
             Console.WriteLine("Bright Light Color Detection and Mapping");
             Console.WriteLine("========================================\n");
+
+            // Check for special commands
+            if (args.Length > 0 && args[0] == "--generate-symbols")
+            {
+                Console.WriteLine("Generating example symbol templates...");
+                SymbolTemplateGenerator.GenerateExampleTemplates();
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--test-symbols")
+            {
+                SymbolDetectionTest.RunTest();
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--test-enhanced")
+            {
+                Console.WriteLine("Testing enhanced shape detector...");
+                TestEnhancedShapeDetector();
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--analyze-shape")
+            {
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dotnet run --analyze-shape <image_path> [epsilon_factor]");
+                    Console.WriteLine("       epsilon_factor: optional, default 0.04 (e.g., 0.01, 0.02, 0.08)");
+                    return;
+                }
+                
+                double epsilonFactor = 0.04;
+                if (args.Length >= 3)
+                {
+                    if (!double.TryParse(args[2], out epsilonFactor))
+                    {
+                        Console.WriteLine("Error: Invalid epsilon factor. Using default 0.04");
+                        epsilonFactor = 0.04;
+                    }
+                }
+                
+                Console.WriteLine("\nAnalyzing shape in image...");
+                Console.WriteLine(EnhancedShapeDetector.GetShapeAnalysisDetails(args[1], epsilonFactor));
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--test-contour-approx")
+            {
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dotnet run --test-contour-approx <image_path>");
+                    return;
+                }
+                Console.WriteLine("\nTesting contour approximation at multiple levels...");
+                ContourApproximation.VisualizeApproximationLevels(args[1]);
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--test-contour-unit")
+            {
+                TestContourApproximation.RunTests();
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--test-outlier-detection")
+            {
+                TestOutlierDetection.RunTests();
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--contour-info")
+            {
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dotnet run --contour-info <image_path> [epsilon_factor]");
+                    return;
+                }
+                
+                double epsilonFactor = 0.04;
+                if (args.Length >= 3)
+                {
+                    if (!double.TryParse(args[2], out epsilonFactor))
+                    {
+                        Console.WriteLine("Error: Invalid epsilon factor. Using default 0.04");
+                        epsilonFactor = 0.1;
+                    }
+                }
+                
+                Console.WriteLine(ContourApproximation.GetApproximationInfo(args[1], epsilonFactor));
+                return;
+            }
+
+            if (args.Length > 0 && args[0] == "--interactive-contour")
+            {
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Usage: dotnet run --interactive-contour <image_path>");
+                    return;
+                }
+                ContourApproximation.InteractiveApproximation(args[1]);
+                return;
+            }
 
             if (args.Length == 0)
             {
@@ -86,205 +197,383 @@ namespace ColorDetectionApp
             };
         }
 
-        static void RunCameraTracking(LightColor targetColor = LightColor.Any)
+        // ✅ REPLACE YOUR ENTIRE RunCameraTracking(...) METHOD WITH THIS VERSION
+// (Everything else in your file can stay the same.)
+static void RunCameraTracking(LightColor targetColor = LightColor.Any)
+{
+    // List to store all brightest points from previous frames
+    var brightestPoints = new List<OpenCvSharp.Point>();
+
+    // Calibration data - stores baseline color for comparison
+    Scalar? calibratedColor = null;
+
+    // Tracking radius for filtering points (adjustable via +/- keys)
+    int trackingRadius = 100;
+
+    // No-light detection timeout in seconds (adjustable via [ and ] keys)
+    double noLightTimeout = 3.0;
+
+    // Track the last time light was detected
+    DateTime? lastLightDetectedTime = null;
+    bool imageExported = false;
+
+    // Outlier detection enabled flag (toggle with 'x' key)
+    bool outlierDetectionEnabled = true;
+
+    // Circular screenshot capture region (adjustable via 'O' and 'I' keys)
+    int captureCircleRadius = 150;
+
+    // Camera flip state (adjustable via 'f' key)
+    bool flipCamera = false;
+
+    // Real-time shape detection variables
+    bool realtimeDetectionEnabled = true;
+    int detectionFrameInterval = 15; // Detect every N frames (adjustable via 'd' and 'D' keys)
+    int frameCounter = 0;
+    string currentDetectedShape = "none";
+    double currentShapeConfidence = 0.0;
+    OpenCvSharp.Point[] currentShapeContour = Array.Empty<OpenCvSharp.Point>();
+
+    // Fullscreen state (adjustable via F11 key)
+    bool isFullscreen = false;
+
+    // Open the default camera
+    using (var capture = new VideoCapture(0))
+    {
+        if (!capture.IsOpened())
         {
-            // List to store all brightest points from previous frames
-            var brightestPoints = new List<OpenCvSharp.Point>();
-            
-            // Calibration data - stores baseline color for comparison
-            Scalar? calibratedColor = null;
-            
-            // Tracking radius for filtering points (adjustable via +/- keys)
-            int trackingRadius = 100;
-            
-            // No-light detection timeout in seconds (adjustable via [ and ] keys)
-            double noLightTimeout = 3.0;
-            
-            // Track the last time light was detected
-            DateTime? lastLightDetectedTime = null;
-            bool imageExported = false;
-            
-            // Open the default camera
-            using (var capture = new VideoCapture(0))
+            Console.WriteLine("Error: Could not open camera. Make sure a camera is connected.");
+            return;
+        }
+
+        // Set camera properties for better performance
+        capture.Set(VideoCaptureProperties.FrameWidth, 640);
+        capture.Set(VideoCaptureProperties.FrameHeight, 480);
+
+        Console.WriteLine($"Camera opened successfully!");
+        Console.WriteLine($"Resolution: {capture.FrameWidth}x{capture.FrameHeight}");
+        Console.WriteLine($"Tracking color: {targetColor}");
+        Console.WriteLine("Press 'b' to calibrate with brightest point color");
+        Console.WriteLine("Press '+' to increase tracking radius, '-' to decrease");
+        Console.WriteLine("Press '[' to decrease no-light timeout, ']' to increase");
+        Console.WriteLine("Press 'o' to increase capture circle size, 'i' to decrease");
+        Console.WriteLine("Press 's' to take circular screenshot");
+        Console.WriteLine("Press 'x' to toggle outlier detection (currently: ON)");
+        Console.WriteLine("Press 'r' to toggle real-time shape detection (currently: ON)");
+        Console.WriteLine("Press 'd' to decrease detection interval (more frequent), 'D' to increase (less frequent)");
+        Console.WriteLine("Press 'f' to flip/mirror camera");
+        Console.WriteLine("Press 'F11' to toggle fullscreen mode");
+
+        // Calculate center point once (frame dimensions don't change)
+        var centerPoint = new OpenCvSharp.Point((int)capture.FrameWidth / 2, (int)capture.FrameHeight / 2);
+
+        using (var frame = new Mat())
+        using (var window = new Window($"Brightest Point Tracker ({targetColor}) - 'q' quit, 'c' clear, 's' screenshot, 'f' flip"))
+        {
+            while (true)
             {
-                if (!capture.IsOpened())
+                // Capture frame from camera
+                capture.Read(frame);
+
+                if (frame.Empty())
                 {
-                    Console.WriteLine("Error: Could not open camera. Make sure a camera is connected.");
-                    return;
+                    Console.WriteLine("Warning: Empty frame captured");
+                    break;
                 }
 
-                // Set camera properties for better performance
-                capture.Set(VideoCaptureProperties.FrameWidth, 640);
-                capture.Set(VideoCaptureProperties.FrameHeight, 480);
-
-                Console.WriteLine($"Camera opened successfully!");
-                Console.WriteLine($"Resolution: {capture.FrameWidth}x{capture.FrameHeight}");
-                Console.WriteLine($"Tracking color: {targetColor}");
-                Console.WriteLine("Press 'b' to calibrate with brightest point color");
-                Console.WriteLine("Press '+' to increase tracking radius, '-' to decrease");
-                Console.WriteLine("Press '[' to decrease no-light timeout, ']' to increase");
-
-                using (var frame = new Mat())
-                using (var window = new Window($"Brightest Point Tracker ({targetColor}) - Press 'q' to quit, 'c' to clear, 'b' to calibrate, '+/-' for radius, '[/]' for timeout"))
+                // Flip the frame horizontally if flip mode is enabled
+                if (flipCamera)
                 {
-                    while (true)
+                    Cv2.Flip(frame, frame, OpenCvSharp.FlipMode.Y); // FlipMode.Y flips horizontally (mirror effect)
+                }
+
+                // Find the brightest point in this frame
+                var searchCenter = brightestPoints.Count > 0
+                    ? brightestPoints[brightestPoints.Count - 1]
+                    : (OpenCvSharp.Point?)null;
+
+                var brightestPoint = FindBrightestPointWithColor(frame, targetColor, searchCenter, trackingRadius);
+
+                if (brightestPoint.HasValue)
+                {
+                    brightestPoints.Add(brightestPoint.Value);
+
+                    // Update last light detected time
+                    lastLightDetectedTime = DateTime.Now;
+                    imageExported = false;
+
+                    // Get the color at the brightest point
+                    var color = GetColorAtPoint(frame, brightestPoint.Value);
+
+                    // Draw the current brightest point
+                    var pointColor = new Scalar(0, 255, 0);
+                    Cv2.Circle(frame, brightestPoint.Value, 8, pointColor, -1);
+                    Cv2.Circle(frame, brightestPoint.Value, 10, pointColor, 2);
+
+                    // Display color information
+                    string colorInfo = $"Color: B={color.Val0:F0} G={color.Val1:F0} R={color.Val2:F0}";
+                    Cv2.PutText(frame, colorInfo, new OpenCvSharp.Point(10, 60),
+                        HersheyFonts.HersheySimplex, 0.5, new Scalar(255, 255, 255), 1);
+
+                    // If calibrated, show color difference
+                    if (calibratedColor.HasValue)
                     {
-                        // Capture frame from camera
-                        capture.Read(frame);
-                        
-                        if (frame.Empty())
-                        {
-                            Console.WriteLine("Warning: Empty frame captured");
-                            break;
-                        }
-
-                        // Find the brightest point in this frame
-                        // If we have previous points, only search within the tracking circle
-                        var searchCenter = brightestPoints.Count > 0 
-                            ? brightestPoints[brightestPoints.Count - 1] 
-                            : (OpenCvSharp.Point?)null;
-                        var brightestPoint = FindBrightestPointWithColor(frame, targetColor, searchCenter, trackingRadius);
-                        
-                        if (brightestPoint.HasValue)
-                        {
-                            // Add to our collection (already filtered by circle search)
-                            brightestPoints.Add(brightestPoint.Value);
-                            
-                            // Update last light detected time
-                            lastLightDetectedTime = DateTime.Now;
-                            imageExported = false;
-                            
-                            // Get the color at the brightest point
-                            var color = GetColorAtPoint(frame, brightestPoint.Value);
-                            
-                            // Draw the current brightest point (large, bright green)
-                            var pointColor = new Scalar(0, 255, 0);
-                            Cv2.Circle(frame, brightestPoint.Value, 8, pointColor, -1);
-                            Cv2.Circle(frame, brightestPoint.Value, 10, pointColor, 2);
-                            
-                            // Display color information
-                            string colorInfo = $"Color: B={color.Val0:F0} G={color.Val1:F0} R={color.Val2:F0}";
-                            Cv2.PutText(frame, colorInfo, new OpenCvSharp.Point(10, 60), 
-                                       HersheyFonts.HersheySimplex, 0.5, new Scalar(255, 255, 255), 1);
-                            
-                            // If calibrated, show color difference
-                            if (calibratedColor.HasValue)
-                            {
-                                double colorDiff = CalculateColorDifference(color, calibratedColor.Value);
-                                string diffInfo = $"Color Diff: {colorDiff:F1}";
-                                Cv2.PutText(frame, diffInfo, new OpenCvSharp.Point(10, 85), 
-                                           HersheyFonts.HersheySimplex, 0.5, new Scalar(255, 255, 255), 1);
-                            }
-                        }
-                        
-                        // Check if light has not been detected for the configured timeout
-                        if (lastLightDetectedTime.HasValue && 
-                            brightestPoints.Count > 0 && 
-                            !imageExported &&
-                            (DateTime.Now - lastLightDetectedTime.Value).TotalSeconds >= noLightTimeout)
-                        {
-                            // Export the drawing to PNG and CSV
-                            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                            string pngFilename = $"light_drawing_{timestamp}.png";
-                            string csvFilename = $"light_drawing_{timestamp}.csv";
-                            ExportDrawingToPng(brightestPoints, (int)capture.FrameWidth, (int)capture.FrameHeight, pngFilename);
-                            ExportPointsToCsv(brightestPoints, csvFilename);
-                            Console.WriteLine($"\nNo light detected for {noLightTimeout}s - Drawing exported to: {pngFilename}");
-                            Console.WriteLine($"Points data exported to: {csvFilename}");
-                            imageExported = true;
-                            
-                            // Clear all points after export
-                            brightestPoints.Clear();
-                            Console.WriteLine("All points cleared after export");
-                        }
-
-                        // Draw lines connecting consecutive points
-                        for (int i = 1; i < brightestPoints.Count; i++)
-                        {
-                            Cv2.Line(frame, brightestPoints[i - 1], brightestPoints[i], 
-                                    new Scalar(255, 128, 0), 2);
-                        }
-
-                        // Draw all historical points (smaller, cyan)
-                        foreach (var point in brightestPoints)
-                        {
-                            Cv2.Circle(frame, point, 3, new Scalar(255, 255, 0), -1);
-                        }
-                        
-                        // Draw tracking radius circle around the last tracked point
-                        if (brightestPoints.Count > 0)
-                        {
-                            var lastPoint = brightestPoints[brightestPoints.Count - 1];
-                            Cv2.Circle(frame, lastPoint, trackingRadius, new Scalar(255, 0, 255), 2);
-                        }
-
-                        // Display frame count and point count
-                        string info = $"Points tracked: {brightestPoints.Count} | Tracking radius: {trackingRadius}px | Timeout: {noLightTimeout:F1}s";
-                        if (calibratedColor.HasValue)
-                        {
-                            info += " [CALIBRATED]";
-                        }
-                        Cv2.PutText(frame, info, new OpenCvSharp.Point(10, 30), 
-                                   HersheyFonts.HersheySimplex, 0.7, new Scalar(255, 255, 255), 2);
-
-                        // Show the frame
-                        window.ShowImage(frame);
-
-                        // Check for key press
-                        int key = Cv2.WaitKey(1);
-                        if (key == 'q' || key == 'Q' || key == 27) // 'q' or ESC
-                        {
-                            break;
-                        }
-                        else if (key == 'c' || key == 'C')
-                        {
-                            brightestPoints.Clear();
-                            Console.WriteLine("Cleared all tracked points");
-                        }
-                        else if (key == 'b' || key == 'B')
-                        {
-                            // Calibration: capture the color of the brightest point
-                            if (brightestPoint.HasValue)
-                            {
-                                calibratedColor = GetColorAtPoint(frame, brightestPoint.Value);
-                                Console.WriteLine($"Calibrated! Baseline color: B={calibratedColor.Value.Val0:F0} G={calibratedColor.Value.Val1:F0} R={calibratedColor.Value.Val2:F0}");
-                            }
-                            else
-                            {
-                                Console.WriteLine("No bright point found for calibration");
-                            }
-                        }
-                        else if (key == '+' || key == '=')
-                        {
-                            trackingRadius += 10;
-                            if (trackingRadius > 500) trackingRadius = 500;
-                            Console.WriteLine($"Tracking radius increased to {trackingRadius}px");
-                        }
-                        else if (key == '-' || key == '_')
-                        {
-                            trackingRadius -= 10;
-                            if (trackingRadius < 10) trackingRadius = 10;
-                            Console.WriteLine($"Tracking radius decreased to {trackingRadius}px");
-                        }
-                        else if (key == '[' || key == '{')
-                        {
-                            noLightTimeout -= 0.5;
-                            if (noLightTimeout < 0.5) noLightTimeout = 0.5;
-                            Console.WriteLine($"No-light timeout decreased to {noLightTimeout:F1}s");
-                        }
-                        else if (key == ']' || key == '}')
-                        {
-                            noLightTimeout += 0.5;
-                            if (noLightTimeout > 30.0) noLightTimeout = 30.0;
-                            Console.WriteLine($"No-light timeout increased to {noLightTimeout:F1}s");
-                        }
+                        double colorDiff = CalculateColorDifference(color, calibratedColor.Value);
+                        string diffInfo = $"Color Diff: {colorDiff:F1}";
+                        Cv2.PutText(frame, diffInfo, new OpenCvSharp.Point(10, 85),
+                            HersheyFonts.HersheySimplex, 0.5, new Scalar(255, 255, 255), 1);
                     }
                 }
 
-                Console.WriteLine($"\nTotal points tracked: {brightestPoints.Count}");
-                Console.WriteLine("Camera tracking stopped.");
-            }
-        }
+                // Check if light has not been detected for the configured timeout
+                if (lastLightDetectedTime.HasValue &&
+                    brightestPoints.Count > 0 &&
+                    !imageExported &&
+                    (DateTime.Now - lastLightDetectedTime.Value).TotalSeconds >= noLightTimeout)
+                {
+                    var pointsToExport = brightestPoints;
+                    if (outlierDetectionEnabled && brightestPoints.Count >= 4)
+                    {
+                        var originalCount = brightestPoints.Count;
+                        pointsToExport = OutlierDetection.RemoveOutliersHybrid(brightestPoints);
+                        if (pointsToExport.Count < originalCount)
+                        {
+                            Console.WriteLine($"\nOutlier detection: Removed {originalCount - pointsToExport.Count} outlier(s) from {originalCount} points");
+                        }
+                    }
+
+                    // Export the drawing to PNG and CSV
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    string pngFilename = $"light_drawing_{timestamp}.png";
+                    string csvFilename = $"light_drawing_{timestamp}.csv";
+                    ExportDrawingToPng(pointsToExport, (int)capture.FrameWidth, (int)capture.FrameHeight, pngFilename);
+                    ExportPointsToCsv(pointsToExport, csvFilename);
+                    Console.WriteLine($"No light detected for {noLightTimeout}s - Drawing exported to: {pngFilename}");
+                    Console.WriteLine($"Points data exported to: {csvFilename}");
+
+                    // Perform symbol detection on the exported image using enhanced detector
+                    DetectAndRecordSymbolsEnhanced(pngFilename);
+
+                    imageExported = true;
+
+                    // Clear all points after export
+                    brightestPoints.Clear();
+                    Console.WriteLine("All points cleared after export");
+
+                    // Reset detection state
+                    currentDetectedShape = "none";
+                    currentShapeConfidence = 0.0;
+                    currentShapeContour = Array.Empty<OpenCvSharp.Point>();
+                }
+
+                // Real-time shape detection (every N frames)
+                frameCounter++;
+                if (realtimeDetectionEnabled &&
+                    brightestPoints.Count >= MIN_POINTS_FOR_DETECTION &&
+                    frameCounter % detectionFrameInterval == 0)
+                {
+                    try
+                    {
+                        using var tempMat = CreateMatFromPoints(brightestPoints, (int)capture.FrameWidth, (int)capture.FrameHeight);
+                        var (shape, confidence, contour) = EnhancedShapeDetector.DetectShapeFromMat(tempMat);
+
+                        if (confidence > MIN_REALTIME_CONFIDENCE)
+                        {
+                            currentDetectedShape = shape;
+                            currentShapeConfidence = confidence;
+                            currentShapeContour = contour;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Real-time detection error: {ex.Message}");
+                    }
+                }
+
+                // Draw lines connecting consecutive points
+                for (int i = 1; i < brightestPoints.Count; i++)
+                {
+                    Cv2.Line(frame, brightestPoints[i - 1], brightestPoints[i],
+                        new Scalar(255, 128, 0), 2);
+                }
+
+                // Draw detected shape contour if available
+                if (currentShapeContour.Length > 0 && brightestPoints.Count >= MIN_POINTS_FOR_DETECTION)
+                {
+                    Cv2.DrawContours(frame, new OpenCvSharp.Point[][] { currentShapeContour }, -1,
+                        new Scalar(0, 255, 0), 2);
+                }
+
+                // Draw all historical points
+                foreach (var point in brightestPoints)
+                {
+                    Cv2.Circle(frame, point, 3, new Scalar(255, 255, 0), -1);
+                }
+
+                // Draw tracking radius circle around the last tracked point
+                if (brightestPoints.Count > 0)
+                {
+                    var lastPoint = brightestPoints[brightestPoints.Count - 1];
+                    Cv2.Circle(frame, lastPoint, trackingRadius, new Scalar(255, 0, 255), 2);
+                }
+
+                // Draw circular screenshot capture region in the center
+                Cv2.Circle(frame, centerPoint, captureCircleRadius, new Scalar(0, 255, 255), 3);
+
+                // Display info
+                string info = $"Points tracked: {brightestPoints.Count} | Tracking radius: {trackingRadius}px | Timeout: {noLightTimeout:F1}s";
+                if (calibratedColor.HasValue) info += " [CALIBRATED]";
+                if (outlierDetectionEnabled) info += " [OUTLIER FILTER: ON]";
+                Cv2.PutText(frame, info, new OpenCvSharp.Point(10, 30),
+                    HersheyFonts.HersheySimplex, 0.7, new Scalar(255, 255, 255), 2);
+
+                // Display real-time shape detection info
+                if (realtimeDetectionEnabled && brightestPoints.Count >= MIN_POINTS_FOR_DETECTION)
+                {
+                    string shapeInfo = $"Detected Shape: {currentDetectedShape.ToUpper()} (Confidence: {currentShapeConfidence:P0})";
+                    Cv2.PutText(frame, shapeInfo, new OpenCvSharp.Point(10, 60),
+                        HersheyFonts.HersheySimplex, 0.8, new Scalar(0, 255, 0), 2);
+                }
+                else if (realtimeDetectionEnabled)
+                {
+                    string shapeInfo = $"Draw more points for shape detection ({brightestPoints.Count}/{MIN_POINTS_FOR_DETECTION})";
+                    Cv2.PutText(frame, shapeInfo, new OpenCvSharp.Point(10, 60),
+                        HersheyFonts.HersheySimplex, 0.6, new Scalar(128, 128, 128), 1);
+                }
+
+                // Display capture circle radius
+                string captureInfo = $"Capture Circle Radius: {captureCircleRadius}px (press 's' to screenshot)";
+                Cv2.PutText(frame, captureInfo, new OpenCvSharp.Point(10, frame.Height - 20),
+                    HersheyFonts.HersheySimplex, 0.6, new Scalar(0, 255, 255), 2);
+
+                // Show the frame
+                window.ShowImage(frame);
+
+                // Key handling
+                int key = Cv2.WaitKey(1);
+
+                if (key == 'q' || key == 'Q' || key == 27)
+                {
+                    break;
+                }
+                else if (key == 'c' || key == 'C')
+                {
+                    brightestPoints.Clear();
+                    Console.WriteLine("Cleared all tracked points");
+                }
+                else if (key == 'b' || key == 'B')
+                {
+                    if (brightestPoint.HasValue)
+                    {
+                        calibratedColor = GetColorAtPoint(frame, brightestPoint.Value);
+                        Console.WriteLine($"Calibrated! Baseline color: B={calibratedColor.Value.Val0:F0} G={calibratedColor.Value.Val1:F0} R={calibratedColor.Value.Val2:F0}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("No bright point found for calibration");
+                    }
+                }
+                else if (key == '+' || key == '=')
+                {
+                    trackingRadius += 10;
+                    if (trackingRadius > 500) trackingRadius = 500;
+                    Console.WriteLine($"Tracking radius increased to {trackingRadius}px");
+                }
+                else if (key == '-' || key == '_')
+                {
+                    trackingRadius -= 10;
+                    if (trackingRadius < 10) trackingRadius = 10;
+                    Console.WriteLine($"Tracking radius decreased to {trackingRadius}px");
+                }
+                else if (key == '[' || key == '{')
+                {
+                    noLightTimeout -= 0.5;
+                    if (noLightTimeout < 0.5) noLightTimeout = 0.5;
+                    Console.WriteLine($"No-light timeout decreased to {noLightTimeout:F1}s");
+                }
+                else if (key == ']' || key == '}')
+                {
+                    noLightTimeout += 0.5;
+                    if (noLightTimeout > 30.0) noLightTimeout = 30.0;
+                    Console.WriteLine($"No-light timeout increased to {noLightTimeout:F1}s");
+                }
+                else if (key == 'o' || key == 'O')
+                {
+                    captureCircleRadius += 10;
+                    if (captureCircleRadius > 500) captureCircleRadius = 500;
+                    Console.WriteLine($"Capture circle radius increased to {captureCircleRadius}px");
+                }
+                else if (key == 'i' || key == 'I')
+                {
+                    captureCircleRadius -= 10;
+                    if (captureCircleRadius < 20) captureCircleRadius = 20;
+                    Console.WriteLine($"Capture circle radius decreased to {captureCircleRadius}px");
+                }
+                else if (key == 's' || key == 'S')
+                {
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    string filename = $"circular_screenshot_{timestamp}.png";
+                    CaptureCircularScreenshot(frame, centerPoint, captureCircleRadius, filename);
+                    Console.WriteLine($"Circular screenshot saved to: {filename}");
+                }
+                else if (key == 'x' || key == 'X')
+                {
+                    outlierDetectionEnabled = !outlierDetectionEnabled;
+                    Console.WriteLine($"Outlier detection: {(outlierDetectionEnabled ? "ENABLED" : "DISABLED")}");
+                }
+                else if (key == 'f' || key == 'F')
+                {
+                    flipCamera = !flipCamera;
+                    Console.WriteLine($"Camera flip {(flipCamera ? "enabled" : "disabled")} - image is {(flipCamera ? "mirrored" : "normal")}");
+                }
+                else if (key == 'r' || key == 'R')
+                {
+                    realtimeDetectionEnabled = !realtimeDetectionEnabled;
+                    Console.WriteLine($"Real-time shape detection: {(realtimeDetectionEnabled ? "ENABLED" : "DISABLED")}");
+                    if (!realtimeDetectionEnabled)
+                    {
+                        currentDetectedShape = "none";
+                        currentShapeConfidence = 0.0;
+                        currentShapeContour = Array.Empty<OpenCvSharp.Point>();
+                    }
+                }
+                else if (key == 'd' || key == 'D')
+                {
+                    // 'D' increases interval (less frequent); 'd' decreases (more frequent)
+                    if (key == 'D')
+                    {
+                        detectionFrameInterval += 5;
+                        if (detectionFrameInterval > 60) detectionFrameInterval = 60;
+                    }
+                    else
+                    {
+                        detectionFrameInterval -= 5;
+                        if (detectionFrameInterval < 5) detectionFrameInterval = 5;
+                    }
+
+                    Console.WriteLine($"Detection frame interval: every {detectionFrameInterval} frames ({ASSUMED_CAMERA_FPS / detectionFrameInterval:F1} times per second)");
+                }
+                else if (key == F11_KEY_CODE_PRIMARY || key == F11_KEY_CODE_ALTERNATE)
+                {
+                    isFullscreen = !isFullscreen;
+                    if (isFullscreen)
+                    {
+                        Cv2.SetWindowProperty(window.Name, WindowPropertyFlags.Fullscreen, 1.0);
+                        Console.WriteLine("Fullscreen mode: ENABLED");
+                    }
+                    else
+                    {
+                        Cv2.SetWindowProperty(window.Name, WindowPropertyFlags.Fullscreen, 0.0);
+                        Console.WriteLine("Fullscreen mode: DISABLED");
+                    }
+                }
+            } // ✅ while(true)
+
+            Console.WriteLine($"\nTotal points tracked: {brightestPoints.Count}");
+            Console.WriteLine("Camera tracking stopped.");
+        } // ✅ using(frame/window)
+    } // ✅ using(capture)
+} // ✅ RunCameraTracking
 
         static OpenCvSharp.Point? FindBrightestPoint(Mat frame, OpenCvSharp.Point? circleCenter = null, int circleRadius = 0)
         {
@@ -310,7 +599,7 @@ namespace ColorDetectionApp
                     Cv2.MinMaxLoc(gray, out minVal, out maxVal, out minLoc, out maxLoc, mask);
                     
                     // Only return if brightness is above threshold (to avoid noise in dark scenes)
-                    if (maxVal >= 200)
+                    if (maxVal >= 230)
                     {
                         return maxLoc;
                     }
@@ -346,8 +635,8 @@ namespace ColorDetectionApp
                     using (var lowerRedMask = new Mat())
                     using (var upperRedMask = new Mat())
                     {
-                        Cv2.InRange(hsvFrame, new Scalar(0, 70, 100), new Scalar(10, 255, 255), lowerRedMask);
-                        Cv2.InRange(hsvFrame, new Scalar(170, 70, 100), new Scalar(180, 255, 255), upperRedMask);
+                        Cv2.InRange(hsvFrame, new Scalar(0, 100, 180), new Scalar(10, 255, 255), lowerRedMask);
+                        Cv2.InRange(hsvFrame, new Scalar(170, 100, 180), new Scalar(180, 255, 255), upperRedMask);
                         colorMask = new Mat();
                         Cv2.BitwiseOr(lowerRedMask, upperRedMask, colorMask);
                     }
@@ -370,8 +659,8 @@ namespace ColorDetectionApp
                         Cv2.CvtColor(frame, gray, ColorConversionCodes.BGR2GRAY);
                         using (var brightMask = new Mat())
                         {
-                            // Create mask for bright pixels (>= 200)
-                            Cv2.Threshold(gray, brightMask, 200, 255, ThresholdTypes.Binary);
+                            // Create mask for bright pixels (>= 230)
+                            Cv2.Threshold(gray, brightMask, 230, 255, ThresholdTypes.Binary);
                             
                             // Combine color and brightness masks
                             using (var combinedMask = new Mat())
@@ -415,17 +704,17 @@ namespace ColorDetectionApp
         {
             // HSV ranges for different colors
             // H: 0-180, S: 0-255, V: 0-255 in OpenCV
-            // Note: Lower saturation thresholds allow detection of dimmer/desaturated lights
+            // Note: Higher saturation and value thresholds for stricter, brighter color detection
             return color switch
             {
                 // Red is handled separately in FindBrightestPointWithColor due to hue wraparound
-                LightColor.Green => (new Scalar(40, 30, 50), new Scalar(80, 255, 255)),    // Green
-                LightColor.Blue => (new Scalar(100, 30, 50), new Scalar(130, 255, 255)),   // Blue
-                LightColor.Yellow => (new Scalar(20, 70, 100), new Scalar(40, 255, 255)),  // Yellow
-                LightColor.Cyan => (new Scalar(80, 30, 50), new Scalar(100, 255, 255)),    // Cyan
-                LightColor.Magenta => (new Scalar(140, 30, 50), new Scalar(170, 255, 255)),// Magenta
-                LightColor.White => (new Scalar(0, 0, 200), new Scalar(180, 30, 255)),     // White (low saturation, high value)
-                _ => (new Scalar(0, 0, 200), new Scalar(180, 255, 255))                    // Any bright (default)
+                LightColor.Green => (new Scalar(50, 50, 50), new Scalar(80, 255, 255)),    // Green - stricter
+                LightColor.Blue => (new Scalar(100, 80, 150), new Scalar(130, 255, 255)),   // Blue - stricter
+                LightColor.Yellow => (new Scalar(20, 100, 180), new Scalar(40, 255, 255)),  // Yellow - stricter
+                LightColor.Cyan => (new Scalar(80, 80, 150), new Scalar(100, 255, 255)),    // Cyan - stricter
+                LightColor.Magenta => (new Scalar(140, 80, 150), new Scalar(170, 255, 255)),// Magenta - stricter
+                LightColor.White => (new Scalar(0, 0, 230), new Scalar(180, 30, 255)),      // White (low saturation, high value) - stricter
+                _ => (new Scalar(0, 0, 230), new Scalar(180, 255, 255))                     // Any bright (default) - stricter
             };
         }
 
@@ -498,6 +787,32 @@ namespace ColorDetectionApp
             }
         }
 
+        /// <summary>
+        /// Creates a Mat image from tracked points for real-time shape detection.
+        /// </summary>
+        static Mat CreateMatFromPoints(List<OpenCvSharp.Point> points, int width, int height)
+        {
+            // Create a black canvas
+            var mat = new Mat(height, width, MatType.CV_8UC1, new Scalar(0));
+
+            if (points.Count > 1)
+            {
+                // Draw lines connecting consecutive points (white lines on black background)
+                for (int i = 1; i < points.Count; i++)
+                {
+                    Cv2.Line(mat, points[i - 1], points[i], new Scalar(255), 3);
+                }
+
+                // Draw all points as small circles
+                foreach (var point in points)
+                {
+                    Cv2.Circle(mat, point, 2, new Scalar(255), -1);
+                }
+            }
+
+            return mat;
+        }
+
         static void ExportPointsToCsv(List<OpenCvSharp.Point> points, string filename)
         {
             // Create CSV file with point data
@@ -512,6 +827,324 @@ namespace ColorDetectionApp
                     writer.WriteLine($"{i},{points[i].X},{points[i].Y}");
                 }
             }
+        }
+
+        static void CaptureCircularScreenshot(Mat frame, OpenCvSharp.Point center, int radius, string filename)
+        {
+            // Calculate the bounding box for the circular region
+            int x = Math.Max(0, center.X - radius);
+            int y = Math.Max(0, center.Y - radius);
+            int width = Math.Min(frame.Width - x, radius * 2);
+            int height = Math.Min(frame.Height - y, radius * 2);
+            
+            // Extract the region of interest
+            var roi = new Rect(x, y, width, height);
+            using (var croppedFrame = new Mat(frame, roi))
+            {
+                // Convert OpenCV Mat to ImageSharp Image
+                var bytes = croppedFrame.ToBytes(".png");
+                using (var image = Image.Load<Rgba32>(bytes))
+                {
+                    // Create a mask for the circular region
+                    // Calculate the center of the cropped image relative to the original circle center
+                    int circleCenterX = center.X - x;
+                    int circleCenterY = center.Y - y;
+                    
+                    // Apply circular mask - make pixels outside the circle transparent
+                    image.ProcessPixelRows(accessor =>
+                    {
+                        for (int py = 0; py < accessor.Height; py++)
+                        {
+                            var pixelRow = accessor.GetRowSpan(py);
+                            for (int px = 0; px < pixelRow.Length; px++)
+                            {
+                                // Calculate distance from the circle center
+                                int dx = px - circleCenterX;
+                                int dy = py - circleCenterY;
+                                double distance = Math.Sqrt(dx * dx + dy * dy);
+                                
+                                // If outside the circle, make pixel transparent
+                                if (distance > radius)
+                                {
+                                    pixelRow[px] = new Rgba32(0, 0, 0, 0);
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Save the circular screenshot
+                    image.Save(filename);
+                }
+            }
+            
+            // After saving, perform symbol detection using enhanced detector
+            DetectAndRecordSymbolsEnhanced(filename);
+        }
+
+        public static void DetectAndRecordSymbols(string imageFilename)
+        {
+            try
+            {
+                // Load the captured image
+                using (var capturedImage = Cv2.ImRead(imageFilename, ImreadModes.Unchanged))
+                {
+                    if (capturedImage.Empty())
+                    {
+                        Console.WriteLine($"Warning: Could not load image for symbol detection: {imageFilename}");
+                        return;
+                    }
+
+                    // Convert to grayscale for template matching
+                    using (var grayImage = new Mat())
+                    {
+                        Cv2.CvtColor(capturedImage, grayImage, ColorConversionCodes.BGRA2GRAY);
+                        
+                        // Get all symbol folders from the symbols directory
+                        string symbolsDir = "symbols";
+                        if (!Directory.Exists(symbolsDir))
+                        {
+                            Console.WriteLine("Info: Symbols directory not found. Creating it...");
+                            Directory.CreateDirectory(symbolsDir);
+                            return;
+                        }
+
+                        // Get all subdirectories (each folder represents a symbol)
+                        var symbolFolders = Directory.GetDirectories(symbolsDir);
+
+                        if (symbolFolders.Length == 0)
+                        {
+                            Console.WriteLine("Info: No symbol folders found in symbols directory.");
+                            Console.WriteLine("Please create folders for each symbol and add training images inside.");
+                            return;
+                        }
+
+                        var allSymbolMatches = new List<(string symbolName, double confidence)>();
+
+                        // Match against each symbol folder (train on multiple images per symbol)
+                        foreach (var symbolFolder in symbolFolders)
+                        {
+                            string symbolName = Path.GetFileName(symbolFolder);
+                            
+                            // Get all image files in this symbol's folder
+                            var trainingImages = Directory.GetFiles(symbolFolder, "*.png")
+                                .Concat(Directory.GetFiles(symbolFolder, "*.jpg"))
+                                .Concat(Directory.GetFiles(symbolFolder, "*.jpeg"))
+                                .Where(f => !f.EndsWith("README.md", StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+
+                            if (trainingImages.Count == 0)
+                            {
+                                Console.WriteLine($"Warning: No training images found in {symbolName} folder.");
+                                continue;
+                            }
+
+                            // Calculate average confidence across all training images for this symbol
+                            var confidenceScores = new List<double>();
+
+                            foreach (var trainingImage in trainingImages)
+                            {
+                                using (var template = Cv2.ImRead(trainingImage, ImreadModes.Grayscale))
+                                {
+                                    if (template.Empty())
+                                    {
+                                        continue;
+                                    }
+
+                                    // Perform template matching
+                                    using (var result = new Mat())
+                                    {
+                                        Cv2.MatchTemplate(grayImage, template, result, TemplateMatchModes.CCoeffNormed);
+                                        
+                                        // Find the best match
+                                        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out _);
+                                        
+                                        confidenceScores.Add(maxVal);
+                                    }
+                                }
+                            }
+
+                            // Use average confidence across all training images
+                            if (confidenceScores.Count > 0)
+                            {
+                                double avgConfidence = confidenceScores.Average();
+                                allSymbolMatches.Add((symbolName, avgConfidence));
+                                Console.WriteLine($"Symbol '{symbolName}': {confidenceScores.Count} training images, avg confidence: {avgConfidence:F3}");
+                            }
+                        }
+
+                        // Always select the symbol with highest average confidence
+                        var detectedSymbols = new List<(string symbolName, double confidence)>();
+                        
+                        if (allSymbolMatches.Any())
+                        {
+                            // Select the symbol with the highest average confidence
+                            var bestMatch = allSymbolMatches.OrderByDescending(m => m.confidence).First();
+                            detectedSymbols.Add(bestMatch);
+                            Console.WriteLine($"Best match: {bestMatch.symbolName} with confidence {bestMatch.confidence:F3}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No valid symbol matches found.");
+                        }
+
+                        // Update CSV with detected symbols
+                        UpdateSymbolsCsv(imageFilename, detectedSymbols);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during symbol detection: {ex.Message}");
+            }
+        }
+
+        static void UpdateSymbolsCsv(string imageFilename, List<(string symbolName, double confidence)> detectedSymbols)
+        {
+            string csvFilename = "detected_symbols.csv";
+            bool fileExists = File.Exists(csvFilename);
+            
+            try
+            {
+                using (var writer = new StreamWriter(csvFilename, append: true))
+                {
+                    // Write header if file doesn't exist
+                    if (!fileExists)
+                    {
+                        writer.WriteLine("Timestamp,ImageFilename,DetectedSymbols,Confidence,Count");
+                    }
+                    
+                    // Prepare the CSV row
+                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                    string symbolsList = detectedSymbols.Count > 0 
+                        ? string.Join(";", detectedSymbols.Select(s => s.symbolName))
+                        : "None";
+                    string confidenceList = detectedSymbols.Count > 0
+                        ? string.Join(";", detectedSymbols.Select(s => s.confidence.ToString("F3")))
+                        : "N/A";
+                    int count = detectedSymbols.Count;
+                    
+                    // Write the data
+                    writer.WriteLine($"{timestamp},{imageFilename},{symbolsList},{confidenceList},{count}");
+                }
+                
+                if (detectedSymbols.Count > 0)
+                {
+                    Console.WriteLine($"Detected {detectedSymbols.Count} symbol(s): {string.Join(", ", detectedSymbols.Select(s => $"{s.symbolName} ({s.confidence:F2})"))}");
+                }
+                else
+                {
+                    Console.WriteLine("No symbols detected in the image.");
+                }
+                Console.WriteLine($"Symbol detection results saved to: {csvFilename}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating symbols CSV: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Enhanced symbol detection using geometric shape analysis.
+        /// Falls back to template matching if enhanced detection has low confidence.
+        /// </summary>
+        public static void DetectAndRecordSymbolsEnhanced(string imageFilename)
+        {
+            try
+            {
+                Console.WriteLine($"\n=== Enhanced Shape Detection ===");
+                
+                // Try enhanced detector first (works better for hand-drawn shapes)
+                var (shape, confidence) = EnhancedShapeDetector.DetectShape(imageFilename);
+                
+                Console.WriteLine($"Enhanced detection: {shape} ({confidence:F3})");
+                
+                // If enhanced detection is confident enough for saving (>60%), use it
+                if (confidence > MIN_SAVED_CONFIDENCE)
+                {
+                    var detectedSymbols = new List<(string symbolName, double confidence)>
+                    {
+                        (shape, confidence)
+                    };
+                    UpdateSymbolsCsv(imageFilename, detectedSymbols);
+                    return;
+                }
+                
+                // Otherwise, try template matching as fallback
+                Console.WriteLine("Confidence too low, trying template matching...");
+                DetectAndRecordSymbols(imageFilename);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in enhanced detection: {ex.Message}");
+                // Final fallback to template matching
+                DetectAndRecordSymbols(imageFilename);
+            }
+        }
+
+        /// <summary>
+        /// Test the enhanced shape detector with generated symbols.
+        /// </summary>
+        static void TestEnhancedShapeDetector()
+        {
+            Console.WriteLine("Enhanced Shape Detector Test");
+            Console.WriteLine("============================\n");
+
+            // Check if symbols exist
+            if (!Directory.Exists("symbols"))
+            {
+                Console.WriteLine("Generating test symbols...");
+                SymbolTemplateGenerator.GenerateExampleTemplates();
+            }
+
+            // Test each shape type
+            var testFiles = new Dictionary<string, string>
+            {
+                { "Circle", "symbols/circle/circle_1.png" },
+                { "Square", "symbols/square/square_1.png" },
+                { "Triangle", "symbols/triangle/triangle_1.png" },
+                { "Star", "symbols/star/star_1.png" }
+            };
+
+            Console.WriteLine("Testing shape detection accuracy:\n");
+
+            foreach (var (expectedShape, filePath) in testFiles)
+            {
+                if (File.Exists(filePath))
+                {
+                    var (detectedShape, confidence) = EnhancedShapeDetector.DetectShape(filePath);
+                    var match = detectedShape.ToLower().Contains(expectedShape.ToLower()) ? "✓" : "✗";
+                    
+                    Console.WriteLine($"{match} {expectedShape,-10} -> Detected: {detectedShape,-12} (confidence: {confidence:F3})");
+                    
+                    // Show detailed analysis for first shape
+                    if (expectedShape == "Circle")
+                    {
+                        Console.WriteLine("\nDetailed analysis for circle:");
+                        Console.WriteLine(EnhancedShapeDetector.GetShapeAnalysisDetails(filePath));
+                        Console.WriteLine();
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"✗ {expectedShape,-10} -> File not found: {filePath}");
+                }
+            }
+
+            Console.WriteLine("\n" + new string('=', 50));
+            Console.WriteLine("Comparison: Enhanced vs Template Matching");
+            Console.WriteLine(new string('=', 50));
+            Console.WriteLine("\nEnhanced Detector Advantages:");
+            Console.WriteLine("✓ Rotation invariant - works with tilted shapes");
+            Console.WriteLine("✓ Scale invariant - works with different sizes");
+            Console.WriteLine("✓ Better for hand-drawn shapes");
+            Console.WriteLine("✓ Works without training images");
+            Console.WriteLine("✓ Analyzes geometric properties");
+            Console.WriteLine("\nTemplate Matching Advantages:");
+            Console.WriteLine("✓ Can learn custom symbols from examples");
+            Console.WriteLine("✓ Good for very specific symbol patterns");
+            Console.WriteLine("✓ Can match exact templates");
+            
+            Console.WriteLine("\nRecommendation: Use enhanced detector for hand-drawn shapes!");
         }
 
         static void GenerateSampleImage(string outputPath)
@@ -642,7 +1275,8 @@ namespace ColorDetectionApp
         {
             var regions = new List<BrightRegion>();
             var visited = new bool[image.Width, image.Height];
-            int brightnessThreshold = 200; // Threshold for considering a pixel as "bright"
+            int brightnessThreshold = 230; // Threshold for considering a pixel as "bright"
+            int maxSaturationForWhite = 80; // Maximum saturation for bright white lights (reduced from 100 for stricter detection)
 
             // Scan the image for bright pixels
             for (int y = 0; y < image.Height; y++)
@@ -659,10 +1293,10 @@ namespace ColorDetectionApp
                     int minChannel = Math.Min(Math.Min(pixel.R, pixel.G), pixel.B);
                     int saturation = maxChannel - minChannel;
 
-                    if (maxChannel >= brightnessThreshold && saturation < 100)
+                    if (maxChannel >= brightnessThreshold && saturation < maxSaturationForWhite)
                     {
                         // Found a bright pixel, flood fill to find the entire region
-                        var region = FloodFill(image, visited, x, y, brightnessThreshold);
+                        var region = FloodFill(image, visited, x, y, brightnessThreshold, maxSaturationForWhite);
                         
                         // Filter out small regions (noise)
                         if (region.PixelCount >= 50)
@@ -676,7 +1310,7 @@ namespace ColorDetectionApp
             return regions;
         }
 
-        static BrightRegion FloodFill(Image<Rgba32> image, bool[,] visited, int startX, int startY, int brightnessThreshold)
+        static BrightRegion FloodFill(Image<Rgba32> image, bool[,] visited, int startX, int startY, int brightnessThreshold, int maxSaturationForWhite)
         {
             var region = new BrightRegion();
             var queue = new Queue<(int x, int y)>();
@@ -701,7 +1335,7 @@ namespace ColorDetectionApp
                         int minChannel = Math.Min(Math.Min(pixel.R, pixel.G), pixel.B);
                         int saturation = maxChannel - minChannel;
 
-                        if (maxChannel >= brightnessThreshold && saturation < 100)
+                        if (maxChannel >= brightnessThreshold && saturation < maxSaturationForWhite)
                         {
                             visited[nx, ny] = true;
                             queue.Enqueue((nx, ny));
