@@ -19,7 +19,7 @@ using System.Threading;
 namespace ColorDetectionApp
 {
     // Enum for predefined color options
-    public enum LightColor
+    enum LightColor
     {
         Any,      // Any bright light (original behavior)
         Red,
@@ -32,7 +32,7 @@ namespace ColorDetectionApp
     }
 
     // Enum for tracking modes
-    public enum TrackingMode
+    enum TrackingMode
     {
         Drawing,  // Drawing mode - draws lines and shapes
         Cursor    // Cursor mode - only tracks coordinates
@@ -325,7 +325,7 @@ namespace ColorDetectionApp
                         {
                             if (brightestPoints.Count == 0)
                             {
-                                NetworkManager.GenerateNewSpellShapeID();
+                                NetworkManager.GenerateNewStrokeID();
                             }
 
                             // Add to our collection (already filtered by circle search)
@@ -359,7 +359,7 @@ namespace ColorDetectionApp
 
                             float normX = (float)(brightestPoint.Value.X / capture.FrameWidth);
                             float normY = (float)(brightestPoint.Value.Y / capture.FrameHeight);
-                            NetworkManager.SendStreamPacket(normX, normY, currentMode == TrackingMode.Drawing);
+                            NetworkManager.SendStreamPacket(normX, normY, lineDrawingEnabled);
                         }
                         
                         // Check if light has not been detected for the configured timeout
@@ -383,13 +383,8 @@ namespace ColorDetectionApp
                             // Perform symbol detection on the exported image using enhanced detector
                             DetectAndRecordSymbolsEnhanced(pngFilename);
 
-
-<<<<<<< HEAD
-                            NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth, currentMode);
-=======
-                            NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth);
->>>>>>> 8ee3630dedd17d531ef84a2efcd98f17a082e1d1
-                            //NetworkManager.SendActionPacket(currentDetectedShape, isRightLane);
+                            var detectionResult = EnhancedShapeDetector.DetectShape(pngFilename);
+                            NetworkManager.SendActionPacket(detectionResult.shape, pointsToExport, capture.FrameWidth);
                             
                             imageExported = true;
                             
@@ -1530,107 +1525,5 @@ namespace ColorDetectionApp
         }
     }
 
-    public static class NetworkManager
-    {
-        private static readonly UdpClient udpClient = new UdpClient();
-        // TODO: CHANGE THIS TO 100.66.230.53 FOR TAILSCALE
-        private static readonly IPEndPoint endPoint = new IPEndPoint(IPAddress.Loopback, 5555);
     
-        public static short CurrentSpellShapeID { get; private set; } = 0;
-        public static int PacketOffset = 0;
-    
-        public static void GenerateNewSpellShapeID()
-        {
-            long timestamp = DateTime.UtcNow.Ticks;
-            byte[] timeBytes = BitConverter.GetBytes(timestamp);
-    
-            using (SHA256 sha256 = SHA256.Create())
-            {
-                byte[] hash = sha256.ComputeHash(timeBytes);
-                // Truncate SHA256 to 2 bytes (Short) as per spec
-                CurrentSpellShapeID = BitConverter.ToInt16(hash, 0);
-            }
-            PacketOffset = 0;
-            Console.WriteLine($">>> NEW SPELL SHAPE ID GENERATED: {CurrentSpellShapeID}");
-        }
-    
-        public static void SendStreamPacket(float x, float y, bool isDrawing)
-        {
-            List<byte> packet = new List<byte>();
-            packet.Add(0); // Type 0: Stream
-            packet.AddRange(BitConverter.GetBytes(CurrentSpellShapeID));
-            packet.AddRange(BitConverter.GetBytes(PacketOffset));
-            packet.AddRange(BitConverter.GetBytes(x));
-            packet.AddRange(BitConverter.GetBytes(y));
-            packet.Add(isDrawing ? (byte)1 : (byte)0);
-    
-            Send(packet.ToArray());
-            PacketOffset++;
-        }
-    
-        // UPDATED: Added frameWidth so we can do math inside here
-        public static void SendActionPacket(string shapeName, List<OpenCvSharp.Point> points, double frameWidth, TrackingMode CurrentMode)
-        {
-            byte classId = 0;
-            byte laneId = 3; // Default to No Lane
-            string cleanName = shapeName.ToLower().Trim();
-    
-            if (cleanName == "line") 
-            {
-                classId = 5; // "Cast" Motion
-                
-                // 2. Override laneId based on FLICK direction
-                var start = points.First();
-                var end = points.Last();
-                double angle = Math.Atan2(end.Y - start.Y, end.X - start.X) * 180 / Math.PI;
-    
-                laneId = angle switch {
-<<<<<<< HEAD
-                    < -115 and > -165 => (byte)0, // Flick Left-Up
-                    <= -65 and >= -115 => (byte)1, // Flick Straight-Up
-                    < -15 and >= -65   => (byte)2, // Flick Right-Up
-                    _ => (byte)3                  // Default / No Lane (The catch-all)
-=======
-                    < -115 and > -165 => 1, // Flick Left-Up
-                    <= -65 and >= -115 => 2, // Flick Straight-Up
-                    < -15 and >= -65   => 3, // Flick Right-Up
-                    _ => 0 // No lane match
->>>>>>> 8ee3630dedd17d531ef84a2efcd98f17a082e1d1
-                };
-            } 
-            else 
-            {
-                // 3. Ingredient Logic
-                classId = cleanName switch {
-                    "circle"    => 1,
-                    "triangle"  => 2,
-                    "rectangle" => 3,
-                    "square"    => 3,
-                    "star"      => 4,
-                    _           => 0
-                };
-            }
-    
-            if (classId == 0) return;
-    
-            List<byte> packet = new List<byte>();
-            packet.Add(1); // Type 1: Action
-            packet.AddRange(BitConverter.GetBytes(CurrentSpellShapeID));
-            packet.Add(classId);
-            packet.Add(laneId);
-    
-            byte[] data = packet.ToArray();
-            // Redundancy spam for UDP
-            for (int i = 0; i < 20; i++) { Send(data); }
-        
-            string debugType = classId == 5 ? "FINISHER" : "INGREDIENT";
-            Console.WriteLine($"[MAGIC] Sent {debugType} ID: {classId} to Lane: {laneId}");
-        }
-    
-        private static void Send(byte[] data)
-        {
-            try { udpClient.Send(data, data.Length, endPoint); }
-            catch {  }
-        }
-    }
 }
