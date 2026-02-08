@@ -43,7 +43,7 @@ public class EnemySpawner : MonoBehaviour
             //Debug.Log("Checking enemy " + i);
             if (enemies[i].dead)
             {
-                Debug.Log("Delete enemy here");
+                //Debug.Log("Delete enemy here");
                 Enemy e = enemies[i];
                 enemies.RemoveAt(i);
                 Destroy(e.gameObject);
@@ -59,7 +59,9 @@ public class EnemySpawner : MonoBehaviour
         t_enemy.speed = enemySpeed;
         t_enemy.player = this.gameObject;
         SpriteRenderer sprt = t_enemy.GetComponent<SpriteRenderer>() as SpriteRenderer;
-        sprt.color = colors[Random.Range(0,colors.Count)];
+        int classType = Random.Range(0,colors.Count);
+        sprt.color = colors[classType];
+        t_enemy.type = (Enemy.EnemyType)classType;
         enemies.Add(t_enemy);
     }
 }

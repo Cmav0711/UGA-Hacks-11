@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 public class Enemy : MonoBehaviour
 {
-    public enum EnemyType {circle=0, square=1, triangle=2, star=3 };
+    public enum EnemyType {error=0,circle=1,triangle=2,square=3,star=4};
     public static List<Color> colors;
     public enum Lane {none=0, left=1, center=2, right=3};
 
@@ -58,12 +58,13 @@ public class Enemy : MonoBehaviour
         
         // Trigger the 4-frame nuke
         anim.SetTrigger("PlayExplosion"); 
+        gameObject.tag = "DeadEnemy";
     }
 
     // This method is called by the Animation Event at the end of the clip
     public void OnAnimationComplete()
     {
-        Debug.Log("Animation done.");
+        //Debug.Log("Animation done.");
         dead = true;
         
         // Optional: Remove from the battlefield entirely
@@ -73,12 +74,12 @@ public class Enemy : MonoBehaviour
     // This triggers when another collider touches this one
     private void OnCollisionEnter2D(Collision2D collision)
     {
-        Debug.Log("Collided with " + collision.gameObject.tag);
+        //Debug.Log("Collided with " + collision.gameObject.tag);
         // Tactical Check: Only die if we hit something specific (like a "Bullet" or "Player")
-        Debug.Log(collision.gameObject.tag == "Player");
+        //Debug.Log(collision.gameObject.tag == "Player");
         if (collision.gameObject.tag == "Player")
         {
-            Debug.Log("Destroying...");
+            //Debug.Log("Destroying...");
             InitiateSelfDestruct();
         }
     }
