@@ -359,7 +359,7 @@ namespace ColorDetectionApp
 
                             float normX = (float)(brightestPoint.Value.X / capture.FrameWidth);
                             float normY = (float)(brightestPoint.Value.Y / capture.FrameHeight);
-                            NetworkManager.SendStreamPacket(normX, normY, CurrentMode == TrackingMode.Drawing);
+                            NetworkManager.SendStreamPacket(normX, normY, currentMode == TrackingMode.Drawing);
                         }
                         
                         // Check if light has not been detected for the configured timeout
@@ -384,7 +384,7 @@ namespace ColorDetectionApp
                             DetectAndRecordSymbolsEnhanced(pngFilename);
 
 
-                            NetworkManager.SendActionPacket();
+                            NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth);
                             //NetworkManager.SendActionPacket(currentDetectedShape, isRightLane);
                             
                             imageExported = true;
@@ -1581,9 +1581,10 @@ namespace ColorDetectionApp
                 double angle = Math.Atan2(end.Y - start.Y, end.X - start.X) * 180 / Math.PI;
     
                 laneId = angle switch {
-                    < -115 and > -165 => 0, // Flick Left-Up
-                    <= -65 and >= -115 => 1, // Flick Straight-Up
-                    < -15 and >= -65   => 2 // Flick Right-Up
+                    < -115 and > -165 => 1, // Flick Left-Up
+                    <= -65 and >= -115 => 2, // Flick Straight-Up
+                    < -15 and >= -65   => 3, // Flick Right-Up
+                    _ => 0 // No lane match
                 };
             } 
             else 
