@@ -1571,6 +1571,7 @@ namespace ColorDetectionApp
             byte classId = 0;
             byte laneId = 3; // Default to No Lane
             string cleanName = shapeName.ToLower().Trim();
+            Console.WriteLine($"Raw Shape Name: {shapeName}");
     
             if (cleanName == "line") 
             {
@@ -1601,7 +1602,7 @@ namespace ColorDetectionApp
                 };
             }
     
-            if (classId == 0) return;
+            // if (classId == 0) return;
     
             List<byte> packet = new List<byte>();
             packet.Add(1); // Type 1: Action
@@ -1613,7 +1614,7 @@ namespace ColorDetectionApp
             // Redundancy spam for UDP
             for (int i = 0; i < 20; i++) { Send(data); }
         
-            string debugType = classId == 5 ? "FINISHER" : "INGREDIENT";
+            string debugType = classId == 5 ? "Cast;" : "Partial;";
             Console.WriteLine($"[MAGIC] Sent {debugType} ID: {classId} to Lane: {laneId}");
         }
     
