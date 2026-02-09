@@ -362,43 +362,6 @@ namespace ColorDetectionApp
                             NetworkManager.SendStreamPacket(normX, normY, currentMode == TrackingMode.Drawing);
                         }
                         
-                        // Check if light has not been detected for the configured timeout
-                        if (lastLightDetectedTime.HasValue && 
-                            brightestPoints.Count > 0 && 
-                            !imageExported &&
-                            (DateTime.Now - lastLightDetectedTime.Value).TotalSeconds >= noLightTimeout)
-                        {
-                            // Apply outlier detection if enabled
-                            var pointsToExport = ApplyOutlierDetectionIfEnabled(brightestPoints, outlierDetectionEnabled);
-                            
-                            // Export the drawing to PNG and CSV
-                            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                            string pngFilename = $"light_drawing_{timestamp}.png";
-                            string csvFilename = $"light_drawing_{timestamp}.csv";
-                            ExportDrawingToPng(pointsToExport, (int)capture.FrameWidth, (int)capture.FrameHeight, pngFilename);
-                            ExportPointsToCsv(pointsToExport, csvFilename);
-                            Console.WriteLine($"No light detected for {noLightTimeout}s - Drawing exported to: {pngFilename}");
-                            Console.WriteLine($"Points data exported to: {csvFilename}");
-                            
-                            // Perform symbol detection on the exported image using enhanced detector
-                            DetectAndRecordSymbolsEnhanced(pngFilename);
-
-
-                            NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth, currentMode);
-                            //NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth);
-                            //NetworkManager.SendActionPacket(currentDetectedShape, isRightLane);
-                            
-                            imageExported = true;
-                            
-                            // Clear all points after export
-                            brightestPoints.Clear();
-                            Console.WriteLine("All points cleared after export");
-                            
-                            // Reset detection state
-                            currentDetectedShape = "none";
-                            currentShapeConfidence = 0.0;
-                            currentShapeContour = Array.Empty<OpenCvSharp.Point>();
-                        }
 
                         // Real-time shape detection (every N frames to avoid performance issues)
                         // Only detect shapes in Drawing mode
@@ -649,6 +612,8 @@ namespace ColorDetectionApp
                                 
                                 // Perform symbol detection on the exported image
                                 DetectAndRecordSymbolsEnhanced(pngFilename);
+
+                                NetworkManager.SendActionPacket(currentDetectedShape, pointsToExport, capture.FrameWidth, currentMode);
                                 
                                 // Clear points after mode switch
                                 brightestPoints.Clear();
@@ -1025,123 +990,6 @@ namespace ColorDetectionApp
             DetectAndRecordSymbolsEnhanced(filename);
         }
 
-        public static void DetectAndRecordSymbols(string imageFilename)
-        {
-            try
-            {
-                // Load the captured image
-                using (var capturedImage = Cv2.ImRead(imageFilename, ImreadModes.Unchanged))
-                {
-                    if (capturedImage.Empty())
-                    {
-                        Console.WriteLine($"Warning: Could not load image for symbol detection: {imageFilename}");
-                        return;
-                    }
-
-                    // Convert to grayscale for template matching
-                    using (var grayImage = new Mat())
-                    {
-                        Cv2.CvtColor(capturedImage, grayImage, ColorConversionCodes.BGRA2GRAY);
-                        
-                        // Get all symbol folders from the symbols directory
-                        string symbolsDir = "symbols";
-                        if (!Directory.Exists(symbolsDir))
-                        {
-                            Console.WriteLine("Info: Symbols directory not found. Creating it...");
-                            Directory.CreateDirectory(symbolsDir);
-                            return;
-                        }
-
-                        // Get all subdirectories (each folder represents a symbol)
-                        var symbolFolders = Directory.GetDirectories(symbolsDir);
-
-                        if (symbolFolders.Length == 0)
-                        {
-                            Console.WriteLine("Info: No symbol folders found in symbols directory.");
-                            Console.WriteLine("Please create folders for each symbol and add training images inside.");
-                            return;
-                        }
-
-                        var allSymbolMatches = new List<(string symbolName, double confidence)>();
-
-                        // Match against each symbol folder (train on multiple images per symbol)
-                        foreach (var symbolFolder in symbolFolders)
-                        {
-                            string symbolName = Path.GetFileName(symbolFolder);
-                            
-                            // Get all image files in this symbol's folder
-                            var trainingImages = Directory.GetFiles(symbolFolder, "*.png")
-                                .Concat(Directory.GetFiles(symbolFolder, "*.jpg"))
-                                .Concat(Directory.GetFiles(symbolFolder, "*.jpeg"))
-                                .Where(f => !f.EndsWith("README.md", StringComparison.OrdinalIgnoreCase))
-                                .ToList();
-
-                            if (trainingImages.Count == 0)
-                            {
-                                Console.WriteLine($"Warning: No training images found in {symbolName} folder.");
-                                continue;
-                            }
-
-                            // Calculate average confidence across all training images for this symbol
-                            var confidenceScores = new List<double>();
-
-                            foreach (var trainingImage in trainingImages)
-                            {
-                                using (var template = Cv2.ImRead(trainingImage, ImreadModes.Grayscale))
-                                {
-                                    if (template.Empty())
-                                    {
-                                        continue;
-                                    }
-
-                                    // Perform template matching
-                                    using (var result = new Mat())
-                                    {
-                                        Cv2.MatchTemplate(grayImage, template, result, TemplateMatchModes.CCoeffNormed);
-                                        
-                                        // Find the best match
-                                        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out _);
-                                        
-                                        confidenceScores.Add(maxVal);
-                                    }
-                                }
-                            }
-
-                            // Use average confidence across all training images
-                            if (confidenceScores.Count > 0)
-                            {
-                                double avgConfidence = confidenceScores.Average();
-                                allSymbolMatches.Add((symbolName, avgConfidence));
-                                Console.WriteLine($"Symbol '{symbolName}': {confidenceScores.Count} training images, avg confidence: {avgConfidence:F3}");
-                            }
-                        }
-
-                        // Always select the symbol with highest average confidence
-                        var detectedSymbols = new List<(string symbolName, double confidence)>();
-                        
-                        if (allSymbolMatches.Any())
-                        {
-                            // Select the symbol with the highest average confidence
-                            var bestMatch = allSymbolMatches.OrderByDescending(m => m.confidence).First();
-                            detectedSymbols.Add(bestMatch);
-                            Console.WriteLine($"Best match: {bestMatch.symbolName} with confidence {bestMatch.confidence:F3}");
-                        }
-                        else
-                        {
-                            Console.WriteLine("No valid symbol matches found.");
-                        }
-
-                        // Update CSV with detected symbols
-                        UpdateSymbolsCsv(imageFilename, detectedSymbols);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error during symbol detection: {ex.Message}");
-            }
-        }
-
         static void UpdateSymbolsCsv(string imageFilename, List<(string symbolName, double confidence)> detectedSymbols)
         {
             string csvFilename = "detected_symbols.csv";
@@ -1189,7 +1037,6 @@ namespace ColorDetectionApp
 
         /// <summary>
         /// Enhanced symbol detection using geometric shape analysis.
-        /// Falls back to template matching if enhanced detection has low confidence.
         /// </summary>
         public static void DetectAndRecordSymbolsEnhanced(string imageFilename)
         {
@@ -1197,12 +1044,10 @@ namespace ColorDetectionApp
             {
                 Console.WriteLine($"\n=== Enhanced Shape Detection ===");
                 
-                // Try enhanced detector first (works better for hand-drawn shapes)
                 var (shape, confidence) = EnhancedShapeDetector.DetectShape(imageFilename);
                 
                 Console.WriteLine($"Enhanced detection: {shape} ({confidence:F3})");
                 
-                // If enhanced detection is confident enough for saving (>60%), use it
                 if (confidence > MIN_SAVED_CONFIDENCE)
                 {
                     var detectedSymbols = new List<(string symbolName, double confidence)>
@@ -1210,18 +1055,15 @@ namespace ColorDetectionApp
                         (shape, confidence)
                     };
                     UpdateSymbolsCsv(imageFilename, detectedSymbols);
-                    return;
                 }
-                
-                // Otherwise, try template matching as fallback
-                Console.WriteLine("Confidence too low, trying template matching...");
-                DetectAndRecordSymbols(imageFilename);
+                else
+                {
+                    Console.WriteLine("Confidence too low; skipping save.");
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error in enhanced detection: {ex.Message}");
-                // Final fallback to template matching
-                DetectAndRecordSymbols(imageFilename);
             }
         }
 
@@ -1534,8 +1376,7 @@ namespace ColorDetectionApp
         private const int DefaultTailScalePort = 5555;
         private static readonly IPEndPoint endPoint = CreateTailScaleEndpoint();
 
-        public static bool PacketLoggingEnabled { get; set; } = true;
-        private static long packetsSent = 0;
+       
     
         public static short CurrentSpellShapeID { get; private set; } = 0;
         public static int PacketOffset = 0;
@@ -1608,10 +1449,10 @@ namespace ColorDetectionApp
                 double angle = Math.Atan2(end.Y - start.Y, end.X - start.X) * 180 / Math.PI;
                 Console.WriteLine($"the angle is {angle}");
                 laneId = angle switch {
-                    < -115 and > -165 => (byte)0, // Flick Left-Up
-                    <= -65 and >= -115 => (byte)1, // Flick Straight-Up
-                    < -15 and >= -65   => (byte)2, // Flick Right-Up
-                    _ => (byte)3                  // Default / No Lane (The catch-all)
+                    < -115 and > -165 => (byte)1, // Flick Left-Up
+                    <= -65 and >= -115 => (byte)2, // Flick Straight-Up
+                    < -15 and >= -65   => (byte)3, // Flick Right-Up
+                    _ => (byte)0                  // Default / No Lane (The catch-all)
                 };
             } 
             else 
@@ -1639,8 +1480,6 @@ namespace ColorDetectionApp
             // Redundancy spam for UDP
             for (int i = 0; i < 20; i++) { Send(data); }
         
-            string debugType = classId == 5 ? "Cast;" : "Partial;";
-            Console.WriteLine($"[MAGIC] Sent {debugType} ID: {classId} to Lane: {laneId}");
         }
     
         private static void Send(byte[] data)
@@ -1648,18 +1487,6 @@ namespace ColorDetectionApp
             try
             {
                 udpClient.Send(data, data.Length, endPoint);
-                if (PacketLoggingEnabled)
-                {
-                    packetsSent++;
-                    byte type = data.Length > 0 ? data[0] : (byte)255;
-                    string typeLabel = type switch
-                    {
-                        0 => "STREAM",
-                        1 => "ACTION",
-                        _ => "UNKNOWN"
-                    };
-                    Console.WriteLine($"[NET] Sent {typeLabel} packet #{packetsSent} ({data.Length} bytes) at {DateTime.Now:HH:mm:ss.fff}");
-                }
             }
             catch {  }
         }

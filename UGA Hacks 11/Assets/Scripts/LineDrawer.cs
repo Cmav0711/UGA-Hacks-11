@@ -4,41 +4,73 @@ using UnityEngine;
 
 public class LineDrawer : MonoBehaviour
 {
+    [Header("Scene refs")]
     [SerializeField] private GameObject linePrefab;
     [SerializeField] private Transform cursorTransform;
-    [SerializeField] private float fadeDuration = 0.5f;
-    
-    private LineRenderer _currentLine;
-    private List<Vector2> _points = new List<Vector2>();
 
-    public void UpdateCursor(Vector2 screenPosition)
+    [Header("Fade")]
+    [SerializeField] private float fadeDuration = 0.5f;
+
+    [Header("Normalized input mapping")]
+    [Tooltip("If true, incoming normalized Y is assumed TOP-left origin (y increases downward).")]
+    [SerializeField] private bool invertNormalizedY = true;
+
+    [Tooltip("Z distance used for ScreenToWorldPoint. For perspective cameras, must be in front of the camera.")]
+    [SerializeField] private float screenToWorldZ = 10f;
+
+    [Tooltip("Optional camera override. If null, uses Camera.main.")]
+    [SerializeField] private Camera cameraOverride;
+
+    private LineRenderer _currentLine;
+
+    // Store normalized points (0..1) so behavior is resolution independent.
+    private readonly List<Vector2> _pointsNorm = new List<Vector2>();
+
+    private Camera Cam => cameraOverride != null ? cameraOverride : Camera.main;
+
+    /// <summary>
+    /// Update the cursor using normalized (0..1) coords.
+    /// Call this on the MAIN THREAD only.
+    /// </summary>
+    public void UpdateCursorNormalized(Vector2 normalizedPosition)
     {
-        Vector3 worldPos = Camera.main.ScreenToWorldPoint(new Vector3(screenPosition.x, screenPosition.y, 10f));
+        var cam = Cam;
+        if (cam == null || cursorTransform == null) return;
+
+        Vector3 worldPos = NormalizedToWorld(normalizedPosition, cam);
         cursorTransform.position = worldPos;
     }
 
     public void StartNewLine()
     {
         // Immediate tactical reset: If a line exists, destroy it before starting fresh
-        if (_currentLine != null) 
+        if (_currentLine != null)
         {
             Destroy(_currentLine.gameObject);
         }
 
         GameObject lineObj = Instantiate(linePrefab, Vector3.zero, Quaternion.identity);
         _currentLine = lineObj.GetComponent<LineRenderer>();
-        _points.Clear();
+        _pointsNorm.Clear();
     }
 
-    public void AddPoint(Vector2 screenPosition)
+    /// <summary>
+    /// Add a point using normalized (0..1) coords.
+    /// Call this on the MAIN THREAD only.
+    /// </summary>
+    public void AddPointNormalized(Vector2 normalizedPosition)
     {
         if (_currentLine == null) return;
 
-        _points.Add(screenPosition);
-        Vector3 worldPos = Camera.main.ScreenToWorldPoint(new Vector3(screenPosition.x, screenPosition.y, 10f));
-        
-        _currentLine.positionCount = _points.Count;
-        _currentLine.SetPosition(_points.Count - 1, worldPos);
+        var cam = Cam;
+        if (cam == null) return;
+
+        _pointsNorm.Add(normalizedPosition);
+
+        Vector3 worldPos = NormalizedToWorld(normalizedPosition, cam);
+
+        _currentLine.positionCount = _pointsNorm.Count;
+        _currentLine.SetPosition(_pointsNorm.Count - 1, worldPos);
     }
 
     public void InitiateFade()
@@ -50,24 +82,42 @@ public class LineDrawer : MonoBehaviour
         }
     }
 
+    private Vector3 NormalizedToWorld(Vector2 norm, Camera cam)
+    {
+        // Clamp to sane bounds in case sender jitters slightly outside 0..1
+        float xNorm = Mathf.Clamp01(norm.x);
+        float yNorm = Mathf.Clamp01(norm.y);
+
+        if (invertNormalizedY)
+            yNorm = 1f - yNorm;
+
+        float px = xNorm * Screen.width;
+        float py = yNorm * Screen.height;
+
+        return cam.ScreenToWorldPoint(new Vector3(px, py, screenToWorldZ));
+    }
+
     private IEnumerator FadeOutRoutine(LineRenderer line)
     {
         float elapsed = 0f;
         Gradient originalGradient = line.colorGradient;
-        
+
         while (elapsed < fadeDuration)
         {
             elapsed += Time.deltaTime;
             float alpha = Mathf.Lerp(1f, 0f, elapsed / fadeDuration);
-            
+
             // Apply alpha to the gradient keys
             Gradient gradient = new Gradient();
             gradient.SetKeys(
                 originalGradient.colorKeys,
-                new GradientAlphaKey[] { new GradientAlphaKey(alpha, 0f), new GradientAlphaKey(alpha, 1f) }
+                new GradientAlphaKey[] {
+                    new GradientAlphaKey(alpha, 0f),
+                    new GradientAlphaKey(alpha, 1f)
+                }
             );
             line.colorGradient = gradient;
-            
+
             yield return null;
         }
 

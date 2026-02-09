@@ -12,6 +12,8 @@ public class SpellSequencer : MonoBehaviour
     private Stack<byte> _classStack = new Stack<byte>();
     private List<GameObject> _visualStack = new List<GameObject>();
 
+    public GameObject player;
+    private SpellCaster caster;
     public void AddToStack(byte shapeClass)
     {
         _classStack.Push(shapeClass);
@@ -20,6 +22,7 @@ public class SpellSequencer : MonoBehaviour
         GameObject newIcon = Instantiate(spritePrefab, stackUIContainer);
         newIcon.GetComponent<Image>().sprite = classSprites[shapeClass];
         _visualStack.Add(newIcon);
+        caster = player.GetComponent<SpellCaster>();
     }
 
     public void FinalizeSequence(byte direction)
@@ -29,7 +32,7 @@ public class SpellSequencer : MonoBehaviour
         // Convert stack to a readable format for the spell logic
         byte[] sequence = _classStack.ToArray();
         System.Array.Reverse(sequence); // Stack is LIFO, reverse to get original order
-
+        Debug.Log("Executing Spell: " + direction);
         ExecuteSpell(sequence, direction);
         ClearStack();
     }
@@ -42,6 +45,7 @@ public class SpellSequencer : MonoBehaviour
         // Tactical Logic Examples:
         // 0-0-1 + Dir 1 = Fireball Left
         // 2-1-0 + Dir 2 = Shield Center
+        caster.CastSequence(sequence, direction);
     }
 
     private void ClearStack()
